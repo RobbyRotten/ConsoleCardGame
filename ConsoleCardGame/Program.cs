@@ -240,28 +240,75 @@ namespace ConsoleCardGame
 
         public void MakeComputerMove(Table playingTable)
         {
-            Console.WriteLine($"Player {Name}'s move...");
-            ShowHand();
+            Console.Write($"Player {Name}'s move: ");
+            // ShowHand();
             var handSorted = Hand.OrderBy(x => x.ValueInt).ToList();
             if (handSorted.Count != 0)
             {
-                
-                var handSortedNoTrump = handSorted.Where(x => x.Suit != playingTable.TrumpSuit).ToList();
                 Card cardToPlay;
-                if (handSortedNoTrump.Count != 0)
+                if (playingTable.LastplayedCard == null)
                 {
-                    cardToPlay = handSortedNoTrump[0];                    
+                    var handSortedNoTrump = handSorted.Where(x => x.Suit != playingTable.TrumpSuit).ToList();                    
+                    if (handSortedNoTrump.Count != 0)
+                    {
+                        cardToPlay = handSortedNoTrump[0];
+                    }
+                    else
+                    {
+                        cardToPlay = handSorted[0];
+                    }
+                    MakeMoveSuccess(cardToPlay, playingTable);
                 }
                 else
                 {
-                    cardToPlay = handSorted[0];
-                }
-                Console.WriteLine(cardToPlay.ValueOf());
-                Hand = Hand.Where(x => x.Id != cardToPlay.Id).ToList();
+                    if (playingTable.LastplayedCard.Suit == playingTable.TrumpSuit)
+                    {
+                        var handSortedTrump = handSorted.Where(x => x.Suit == playingTable.TrumpSuit).ToList();
+                        if (handSortedTrump.Count != 0)
+                        {
+                            MakeMoveSuccess(handSortedTrump[0], playingTable);
+                        }
+                        else
+                        {
+                            // TODO Player takes all cards
+                        }
+                    }
+                    else
+                    {
+                        var handSortedNoTrump = handSorted.Where(
+                            x => x.Suit == playingTable.LastplayedCard.Suit &&
+                                 x.ValueInt > playingTable.LastplayedCard.ValueInt).ToList();
+                        if (handSortedNoTrump.Count != 0)
+                        {
+                            MakeMoveSuccess(handSortedNoTrump[0], playingTable);
+                        }
+                        else
+                        {
+                            // TODO Player takes all cards
+                        }
+                    }
+                }                
             }
             else
             {
                 Console.WriteLine($"Player {Name} has no more cards.");
+            }
+        }
+
+
+        public void MakeMoveSuccess(Card cardToPlay, Table playingTable)
+        {
+            Console.WriteLine(cardToPlay.ValueOf());
+            Hand = Hand.Where(x => x.Id != cardToPlay.Id).ToList();
+            if (Hand.Count == 0 && playingTable.TotalCards.Count == 0)
+            {
+                string message = "You won!";
+                if (!IsUser)
+                {
+                    message = $"Player {Name} won!";
+                }
+                Console.WriteLine(message);
+                playingTable.Players = playingTable.Players.Where(x => x.Id != Id).ToList();
             }
         }
     }
