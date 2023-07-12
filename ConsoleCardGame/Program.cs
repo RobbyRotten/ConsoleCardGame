@@ -6,8 +6,8 @@ namespace ConsoleCardGame
     {
         static void Main(string[] args)        {
                    
-            var PlayingTable = new Table();
-            // PlayingTable.ShowTotalCards();
+            var playingTable = new Table();
+            // playingTable.ShowTotalCards();
             int PlayersNum = 2;
             for (int i = 0; i < PlayersNum; i++)
             {
@@ -19,16 +19,56 @@ namespace ConsoleCardGame
                     name = "Me";
                 }
                 var player = new Player(isUser, name, i);
-                player.Hand = PlayingTable.GiveCard(6);
+                player.Hand = playingTable.GiveCard(6);
                 // player.ShowHand();
-                PlayingTable.Players.Add(player);
+                playingTable.Players.Add(player);
             }
-            PlayingTable.ShowTrumpSuit();
-            PlayingTable.SetPlayersPriority();            
-            foreach (Player player in PlayingTable.Players)
+            playingTable.ShowTrumpSuit();
+            playingTable.SetPlayersPriority();
+            //playingTable.AddPlayersToRound();
+            int storedRound = 0;
+            while (!playingTable.GameEnd)
             {
-                player.MakeMove(PlayingTable);
-            }            
+                if (storedRound != playingTable.Round)
+                {
+                    foreach (Player player in playingTable.Players)
+                    {
+                        int cardsToTake = 6 - player.Hand.Count;
+                        if (cardsToTake > 0)
+                        {
+                            player.Hand.AddRange(playingTable.GiveCard(cardsToTake));
+                        }
+                    }
+                    //playingTable.AddPlayersToRound();
+                    playingTable.ShowRound();
+                    storedRound = playingTable.Round;
+                    playingTable.CardsToBeat.Clear();
+                }                
+                foreach (Player player in playingTable.Players)
+                {
+                    player.MakeMove(playingTable);
+                }
+            }
+        }
+    }
+
+    public class CardPair
+    {
+        public int Id;
+        public Card? Card1st;
+        public Card? Card2nd;
+        public bool Beaten = false;
+
+        public CardPair(Card card1st)
+        {
+            Card1st = card1st;
+        }
+
+        public void BeatCard(Card beatingCard)
+        {
+            Card2nd = beatingCard;
+            Id = beatingCard.Id;
+            Beaten = true;
         }
     }
 
@@ -36,11 +76,16 @@ namespace ConsoleCardGame
     {
         public List<Player> Players = new List<Player>();
         public List<Card> TotalCards = new List<Card>();
+        public List<CardPair> CardsToBeat = new List<CardPair>();
         public string TrumpSuit;
-        public Card? LastplayedCard;
+        public bool GameEnd = false;
+        public int Round;
+        public Dictionary<int, List<Player>> PlayersInRound = new Dictionary<int, List<Player>>();
+        // public Card? LastplayedCard;
 
         public Table() 
         {
+            Round = 1;
             var Suits = new List<string> { "♥", "♦", "♣", "♠" };
             Random random = new Random();
             TrumpSuit = Suits[random.Next(Suits.Count)];
@@ -60,6 +105,16 @@ namespace ConsoleCardGame
                     id++;
                 }
             }
+        }
+
+        public void AddPlayersToRound()
+        {
+            PlayersInRound[Round] = Players;
+        }
+
+        public void ShowRound()
+        {
+            Console.WriteLine($"Round #{Round}. Trump Suit: {TrumpSuit}");
         }
         
         public List<Card> GiveCard(int cardsNum)
@@ -92,6 +147,43 @@ namespace ConsoleCardGame
         public void ShowTrumpSuit()
         {
             Console.WriteLine($"Trump Suit: {TrumpSuit}");
+        }
+
+        public Card? LastCardToBeat()
+        {
+            var LastPair = CardsToBeat.LastOrDefault();
+            if (LastPair == null)
+            {
+                return null;
+            }
+            return LastPair.Card1st;
+        }
+        
+        public int? LastCardToBeatIndex()
+        {
+            var LastPair = CardsToBeat.LastOrDefault();
+            if (LastPair == null)
+            {
+                return null;
+            }
+            for (int i = 0; i < CardsToBeat.Count; i++)
+            {
+                if (CardsToBeat[i].Id == LastPair.Id)
+                {
+                    return i;
+                }
+            }
+            return null;
+        }
+
+        public void BeatLastCard(Card card)
+        {
+            var ind = LastCardToBeatIndex();
+            if (ind == null)
+            {
+                throw new Exception("Error: index is null");
+            }
+            CardsToBeat[ind.Value].Card2nd = card;
         }
 
         public void SetPlayersPriority()
@@ -179,6 +271,7 @@ namespace ConsoleCardGame
         public bool IsUser;
         public string Name;
         public List<Card> Hand;
+        public bool IsDefending = false;        
         // public int Priority = 0;
 
         public Player(bool isUser, string name, int id)
@@ -227,9 +320,52 @@ namespace ConsoleCardGame
                     Console.WriteLine("Please enter a valid index.");
                     MakeUserMove(playingTable);
                 }
-                Console.WriteLine(Hand[cardIndex].ValueOf());
-                playingTable.LastplayedCard = Hand[cardIndex];
-                Hand.RemoveAt(cardIndex);
+                /*
+                 * User input is valid
+                 */
+                var cardToPlay = Hand[cardIndex];
+                var cardToBeat = playingTable.LastCardToBeat();
+                if (cardToBeat == null)
+                {
+                    /*
+                     * User is attacking
+                     */
+                    MakeMoveAttack(cardToPlay, playingTable);
+                }
+                else
+                {
+                    /*
+                     * User is defending
+                     */                    
+                    if ((cardToBeat.Suit == cardToPlay.Suit && cardToBeat.ValueInt < cardToPlay.ValueInt) ||
+                        (cardToBeat.Suit != playingTable.TrumpSuit && cardToPlay.Suit == playingTable.TrumpSuit))
+                    {
+                        MakeMoveDefend(cardToPlay, playingTable);
+                    }
+                    else
+                    {
+                        Console.Write("You cannot make this move. ");
+                        bool try_again = false;
+                        foreach (Card checkCard in Hand)
+                        {
+                            if ((cardToBeat.Suit == checkCard.Suit && cardToBeat.ValueInt < checkCard.ValueInt) ||
+                                (cardToBeat.Suit != playingTable.TrumpSuit && checkCard.Suit == playingTable.TrumpSuit))
+                            {
+                                try_again = true;
+                                break;
+                            }
+                        }
+                        if (try_again)
+                        {
+                            Console.WriteLine("Try another card.");
+                            MakeUserMove(playingTable);
+                        }
+                        else
+                        {
+                            DefendFailure(playingTable);
+                        }
+                    }
+                }                
             }
             else
             {
@@ -240,14 +376,17 @@ namespace ConsoleCardGame
 
         public void MakeComputerMove(Table playingTable)
         {
-            Console.Write($"Player {Name}'s move: ");
-            // ShowHand();
+            ShowHand();
+            Console.Write($"Player {Name}'s move: ");            
             var handSorted = Hand.OrderBy(x => x.ValueInt).ToList();
             if (handSorted.Count != 0)
             {
                 Card cardToPlay;
-                if (playingTable.LastplayedCard == null)
+                if (playingTable.LastCardToBeat() == null)
                 {
+                    /*
+                     *  Player is attacking
+                     */
                     var handSortedNoTrump = handSorted.Where(x => x.Suit != playingTable.TrumpSuit).ToList();                    
                     if (handSortedNoTrump.Count != 0)
                     {
@@ -257,34 +396,56 @@ namespace ConsoleCardGame
                     {
                         cardToPlay = handSorted[0];
                     }
-                    MakeMoveSuccess(cardToPlay, playingTable);
+                    MakeMoveAttack(cardToPlay, playingTable);
                 }
                 else
                 {
-                    if (playingTable.LastplayedCard.Suit == playingTable.TrumpSuit)
+                    /*
+                     *  Player is defending
+                     */
+                    if (playingTable.LastCardToBeat().Suit == playingTable.TrumpSuit)
                     {
-                        var handSortedTrump = handSorted.Where(x => x.Suit == playingTable.TrumpSuit).ToList();
+                        /*
+                         *  Beating trump cards
+                         */
+                        var handSortedTrump = handSorted.Where(
+                            x => x.Suit == playingTable.TrumpSuit && 
+                                 x.ValueInt > playingTable.LastCardToBeat().ValueInt).ToList();
                         if (handSortedTrump.Count != 0)
                         {
-                            MakeMoveSuccess(handSortedTrump[0], playingTable);
+                            MakeMoveDefend(handSortedTrump[0], playingTable);
                         }
                         else
                         {
-                            // TODO Player takes all cards
+                            DefendFailure(playingTable);
                         }
                     }
                     else
                     {
+                        /*
+                         *  Beating non-trump cards with same suit
+                         */
                         var handSortedNoTrump = handSorted.Where(
-                            x => x.Suit == playingTable.LastplayedCard.Suit &&
-                                 x.ValueInt > playingTable.LastplayedCard.ValueInt).ToList();
+                            x => x.Suit == playingTable.LastCardToBeat().Suit &&
+                                 x.ValueInt > playingTable.LastCardToBeat().ValueInt).ToList();
                         if (handSortedNoTrump.Count != 0)
                         {
-                            MakeMoveSuccess(handSortedNoTrump[0], playingTable);
+                            MakeMoveDefend(handSortedNoTrump[0], playingTable);
                         }
                         else
                         {
-                            // TODO Player takes all cards
+                            /*
+                             *  Beating non-trump cards with a trump card
+                             */
+                            var handSortedTrump = handSorted.Where(x => x.Suit == playingTable.TrumpSuit).ToList();
+                            if (handSortedTrump.Count != 0)
+                            {
+                                MakeMoveDefend(handSortedTrump[0], playingTable);
+                            }
+                            else
+                            {
+                                DefendFailure(playingTable);
+                            }
                         }
                     }
                 }                
@@ -295,7 +456,54 @@ namespace ConsoleCardGame
             }
         }
 
+        public void MakeMoveAttack(Card cardToPlay, Table playingTable)
+        {
+            Console.WriteLine(cardToPlay.ValueOf());
+            Hand = Hand.Where(x => x.Id != cardToPlay.Id).ToList();
+            playingTable.CardsToBeat.Add(new CardPair(cardToPlay));
+        }
 
+        public void MakeMoveDefend(Card cardToPlay, Table playingTable)
+        {
+            Console.WriteLine(cardToPlay.ValueOf());
+            Hand = Hand.Where(x => x.Id != cardToPlay.Id).ToList();
+            var cardPair = playingTable.LastCardToBeat();
+            if (cardPair == null)
+            {
+                throw new Exception("Error: cardPair is null");
+            }
+            else
+            {
+                playingTable.BeatLastCard(cardToPlay);
+            }
+            Console.WriteLine("Defend successful");
+            playingTable.Round++;
+        }
+
+        public void DefendFailure(Table playingTable)
+        {
+            foreach (CardPair cardPair in playingTable.CardsToBeat)
+            {
+                if (cardPair.Card1st == null)
+                {
+                    throw new Exception("Card1st in cardPair is null");
+                }
+                Hand.Add(cardPair.Card1st);
+                if (cardPair.Card2nd != null)
+                {
+                    Hand.Add(cardPair.Card2nd);
+                }
+            }
+            string message = "You take all cards";
+            if (!IsUser)
+            {
+                message = $"Player {Name} takes all cards";
+            }
+            playingTable.Round++;
+            Console.WriteLine(message);
+        }
+
+        /*
         public void MakeMoveSuccess(Card cardToPlay, Table playingTable)
         {
             Console.WriteLine(cardToPlay.ValueOf());
@@ -311,5 +519,6 @@ namespace ConsoleCardGame
                 playingTable.Players = playingTable.Players.Where(x => x.Id != Id).ToList();
             }
         }
+        */
     }
 }
