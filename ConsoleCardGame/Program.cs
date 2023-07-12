@@ -25,10 +25,11 @@ namespace ConsoleCardGame
             }
             playingTable.ShowTrumpSuit();
             playingTable.SetPlayersPriority();
-            //playingTable.AddPlayersToRound();
             int storedRound = 0;
-            while (!playingTable.GameEnd)
+            bool gameIsGoing = true;
+            while (gameIsGoing)
             {
+                playingTable.ClearPlayersAttacks();
                 if (storedRound != playingTable.Round)
                 {
                     foreach (Player player in playingTable.Players)
@@ -39,14 +40,29 @@ namespace ConsoleCardGame
                             player.Hand.AddRange(playingTable.GiveCard(cardsToTake));
                         }
                     }
-                    //playingTable.AddPlayersToRound();
+                    playingTable.ClearPlayersFails();
                     playingTable.ShowRound();
                     storedRound = playingTable.Round;
                     playingTable.CardsToBeat.Clear();
-                }                
-                foreach (Player player in playingTable.Players)
+                }
+                var playersOrder = playingTable.Players;
+                if (playingTable.Round == 1)
                 {
-                    player.MakeMove(playingTable);
+                    playersOrder = playingTable.Players1stRound;
+                }
+                foreach (Player player in playersOrder)
+                {
+                    /*
+                     * Player doesn't make move if defence failed
+                     */
+                    if (player.Success && !player.WasAttacking)
+                    {
+                        player.MakeMove(playingTable);
+                    }      
+                    if (playingTable.CheckGameEnd())
+                    {
+                        gameIsGoing = false;
+                    }
                 }
             }
         }
@@ -75,12 +91,12 @@ namespace ConsoleCardGame
     public class Table
     {
         public List<Player> Players = new List<Player>();
+        public List<Player> Players1stRound = new List<Player>();
         public List<Card> TotalCards = new List<Card>();
         public List<CardPair> CardsToBeat = new List<CardPair>();
         public string TrumpSuit;
-        public bool GameEnd = false;
         public int Round;
-        public Dictionary<int, List<Player>> PlayersInRound = new Dictionary<int, List<Player>>();
+        // public Dictionary<int, List<Player>> PlayersInRound = new Dictionary<int, List<Player>>();
         // public Card? LastplayedCard;
 
         public Table() 
@@ -107,9 +123,37 @@ namespace ConsoleCardGame
             }
         }
 
-        public void AddPlayersToRound()
+        public bool CheckGameEnd()
         {
-            PlayersInRound[Round] = Players;
+            if (Players.Count == 1)
+            {
+                var player = Players[0];
+                string message = "You lose.";
+                if (!player.IsUser)
+                {
+                    message = $"Player {player.Name} lost";
+                }
+                Console.WriteLine(message);
+                return true;
+            }
+            return false;
+        }
+
+        public void ClearPlayersFails()
+        {
+            foreach (Player player in Players)
+            {
+                player.Success = true;
+                // player.WasAttacking = false;
+            }
+        }
+        
+        public void ClearPlayersAttacks()
+        {
+            foreach (Player player in Players)
+            {
+                player.WasAttacking = false;
+            }
         }
 
         public void ShowRound()
@@ -191,8 +235,6 @@ namespace ConsoleCardGame
             var maxTrumpDict = new Dictionary<int, int>();
             foreach (Player player in Players)
             {
-                // Console.WriteLine($"{player.Name} {player.Id}");
-                // player.ShowHand();
                 foreach (Card card in player.Hand)
                 {
                     if (card.Suit == TrumpSuit)
@@ -239,6 +281,14 @@ namespace ConsoleCardGame
                 }
             }
             Players = orderedPlayers;
+            var playerBest = Players[0];
+            var playerWorst = Players.Last();
+            Players1stRound = new List<Player> {playerBest, playerWorst};
+            var otherPlayers = Players.Where(x => x.Id != playerBest.Id && x.Id != playerWorst.Id).ToList();
+            if (otherPlayers.Count != 0)
+            {
+                Players1stRound.AddRange(otherPlayers);
+            }
         }
 
     }
@@ -271,7 +321,8 @@ namespace ConsoleCardGame
         public bool IsUser;
         public string Name;
         public List<Card> Hand;
-        public bool IsDefending = false;        
+        public bool Success = true;
+        public bool WasAttacking = false;
         // public int Priority = 0;
 
         public Player(bool isUser, string name, int id)
@@ -305,6 +356,7 @@ namespace ConsoleCardGame
             {                
                 MakeComputerMove(playingTable);
             }
+            CheckPlayerWin(playingTable);
         }
 
         public void MakeUserMove(Table playingTable)
@@ -461,6 +513,7 @@ namespace ConsoleCardGame
             Console.WriteLine(cardToPlay.ValueOf());
             Hand = Hand.Where(x => x.Id != cardToPlay.Id).ToList();
             playingTable.CardsToBeat.Add(new CardPair(cardToPlay));
+            WasAttacking = true;
         }
 
         public void MakeMoveDefend(Card cardToPlay, Table playingTable)
@@ -476,7 +529,7 @@ namespace ConsoleCardGame
             {
                 playingTable.BeatLastCard(cardToPlay);
             }
-            Console.WriteLine("Defend successful");
+            Console.WriteLine($"Defend successful ({Name})");
             playingTable.Round++;
         }
 
@@ -500,9 +553,23 @@ namespace ConsoleCardGame
                 message = $"Player {Name} takes all cards";
             }
             playingTable.Round++;
+            Success = false;
             Console.WriteLine(message);
         }
 
+        public void CheckPlayerWin(Table playingTable)
+        {
+            if (Hand.Count == 0 && playingTable.TotalCards.Count == 0)
+            {
+                string message = "You won!";
+                if (!IsUser)
+                {
+                    message = $"Player {Name} won!";
+                }
+                Console.WriteLine(message);
+                playingTable.Players = playingTable.Players.Where(x => x.Id != Id).ToList();
+            }
+        }
         /*
         public void MakeMoveSuccess(Card cardToPlay, Table playingTable)
         {
